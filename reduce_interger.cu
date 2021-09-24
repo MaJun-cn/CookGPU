@@ -1,6 +1,13 @@
 #include <stdio.h>
 #include <sys/time.h>
 
+double CpuSecond() {
+    struct timeval tp;
+    gettimeofday(&tp, NULL);
+    return ((double)tp.tv_sec + (double)tp.tv_usec*1.e-6);
+
+}
+
 int CpuNormalCal(int* data, const int size) {
     int sum = 0;
     for (int i = 0; i < size; ++i) {
@@ -115,14 +122,16 @@ int main(int argc, char** argv) {
     // copy input data from h to d
     cudaMemcpy(d_idata, h_idata, bytes, cudaMemcpyHostToDevice);
     // cuda kernal cal
+    double t1 = CpuSecond();
     GpuReduceNeighbored<<<grid, block>>>(d_idata, d_odata, size);
+    double elaps1 = CpuSecond() - t1;
     // copy output data from d to h
     cudaMemcpy(h_odata, d_odata, grid.x * sizeof(int), cudaMemcpyDeviceToHost);
     // cpu cal
     for (int i = 0; i < grid.x; ++i) {
         gpu_sum += h_odata[i];
     }
-    printf("GpuReduceNeighbored result: %d\n", gpu_sum);
+    printf("GpuReduceNeighbored result: %d, kernal elaps: %f\n", gpu_sum, elaps1);
     memset(h_odata, 0, grid.x * sizeof(int));
     gpu_sum = 0;
 
@@ -130,14 +139,16 @@ int main(int argc, char** argv) {
     // copy input data from h to d
     cudaMemcpy(d_idata, h_idata, bytes, cudaMemcpyHostToDevice);
     // cuda kernal cal
+    double t2 = CpuSecond();
     GpuReduceNeighboredV2<<<grid, block>>>(d_idata, d_odata, size);
+    double elaps2 = CpuSecond() - t2;
     // copy output data from d to h
     cudaMemcpy(h_odata, d_odata, grid.x * sizeof(int), cudaMemcpyDeviceToHost);
     // cpu cal
     for (int i = 0; i < grid.x; ++i) {
         gpu_sum += h_odata[i];
     }
-    printf("GpuReduceNeighboredV2 result: %d\n", gpu_sum);
+    printf("GpuReduceNeighboredV2 result: %d, kernal elaps: %f\n", gpu_sum, elaps2);
     memset(h_odata, 0, grid.x * sizeof(int));
     gpu_sum = 0;
 
@@ -145,20 +156,31 @@ int main(int argc, char** argv) {
     // copy input data from h to d
     cudaMemcpy(d_idata, h_idata, bytes, cudaMemcpyHostToDevice);
     // cuda kernal cal
+    double t3 = CpuSecond();
     GpuReduceInterleaved<<<grid, block>>>(d_idata, d_odata, size);
+    double elaps3 = CpuSecond() - t3;
     // copy output data from d to h
     cudaMemcpy(h_odata, d_odata, grid.x * sizeof(int), cudaMemcpyDeviceToHost);
     // cpu cal
     for (int i = 0; i < grid.x; ++i) {
         gpu_sum += h_odata[i];
     }
-    printf("GpuReduceInterleaved result: %d\n", gpu_sum);
+    double elaps_all_3 = CpuSecond() - t3;
+    printf("GpuReduceInterleaved result: %d, kernal elaps: %f, all elaps: %f\n", gpu_sum, elaps3, elaps_all_3);
     memset(h_odata, 0, grid.x * sizeof(int));
     gpu_sum = 0;
 
     memcpy(tmp, h_idata, bytes);
-    printf("cpu normal result: %d\n", CpuNormalCal(tmp, size));
-    printf("cpu recusize result: %d\n", CpuRecusiveReduce(tmp, size));
+    // ------ cpu 1 ------
+    double t4 = CpuSecond();
+    int cpu_sum1 = CpuNormalCal(tmp, size);
+    double elaps_all_4 = CpuSecond() - t4;
+    // ------ cpu 2 ------
+    double t5 = CpuSecond();
+    int cpu_sum2 = CpuRecusiveReduce(tmp, size);
+    double elaps_all_5 = CpuSecond() - t5;
+    printf("cpu normal result: %d, elaps_all: %f\n", cpu_sum1, elaps_all_4);
+    printf("cpu recusize result: %d， elaps_all: %f\n", cpu_sum2, elaps_all_5);
 
     // free host mem
     free(h_idata);
@@ -169,3 +191,13 @@ int main(int argc, char** argv) {
     // reset device
     cudaDeviceReset();
 }
+/*
+device[0]: Tesla V100-SXM2-32GB
+array size: 16777216
+kernal size: grid(32768, 1), block(512, 1)
+GpuReduceNeighbored result: 2139353471, kernal elaps: 0.000035
+GpuReduceNeighboredV2 result: 2139353471, kernal elaps: 0.000017
+GpuReduceInterleaved result: 2139353471, kernal elaps: 0.000011, all elaps: 0.000567
+cpu normal result: 2139353471, elaps_all: 0.043164
+cpu recusize result: 2139353471， elaps_all: 0.042999
+*/
